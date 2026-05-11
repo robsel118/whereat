@@ -4,6 +4,12 @@ const { useState, useEffect, useMemo, useRef } = React;
 const STORAGE_KEY = "whereat:v1";
 const ERASER = "__ERASER__";
 
+const SCHENGEN_CODES = new Set([
+  "AT","BE","BG","HR","CZ","DK","EE","FI","FR","DE",
+  "GR","HU","IS","IT","LV","LT","LU","MT","NL","NO",
+  "PL","PT","RO","SK","SI","ES","SE","CH",
+]);
+
 // Build a cursor data-url from an emoji glyph (rendered to a tiny canvas).
 const _cursorCache = {};
 function emojiCursor(emoji) {
@@ -43,6 +49,39 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"]; // Mon-first
+
+// ---------- Tax residency status ----------
+function getTaxStatus(days, taxDays) {
+  const pct = days / taxDays;
+  const level = pct >= 1 ? "over" : pct >= 0.5 ? "warn" : "ok";
+  return { level, remaining: taxDays - days };
+}
+
+// ---------- Schengen status ----------
+function schengenStatus(entries) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const windowStart = new Date(today);
+  windowStart.setDate(windowStart.getDate() - 179);
+
+  let used = 0;
+  const cur = new Date(windowStart);
+  while (cur <= today) {
+    const codes = entries[ymd(cur)] || [];
+    if (codes.some((c) => SCHENGEN_CODES.has(c))) used++;
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  let planned = 0;
+  Object.entries(entries).forEach(([k, codes]) => {
+    const d = parseYmd(k);
+    if (d >= tomorrow && codes.some((c) => SCHENGEN_CODES.has(c))) planned++;
+  });
+
+  return { used, planned, total: used + planned };
+}
 
 // ---------- storage ----------
 function loadState() {
@@ -105,6 +144,15 @@ function FlagButton({ country, children, onClick, className = "", style = {}, ti
 // ---------- Stats bar ----------
 function StatsBar({ counts, totalDays, year, setYear, availableYears, upcoming }) {
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const [taxPopover, setTaxPopover] = useState(null);
+
+  useEffect(() => {
+    if (!taxPopover) return;
+    const close = () => setTaxPopover(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [taxPopover]);
+
   return (
     <div className="stats">
       <div className="stats-summary">
@@ -144,13 +192,65 @@ function StatsBar({ counts, totalDays, year, setYear, availableYears, upcoming }
         {sorted.map(([code, n]) => {
           const c = window.COUNTRY_BY_CODE[code];
           if (!c) return null;
+          const taxStatus = c.taxDays ? getTaxStatus(n, c.taxDays) : null;
+          const popoverOpen = taxPopover === code;
           return (
-            <FlagButton key={code} country={c} className="stat-pill">
-              <span className="flag">{c.flag}</span>
-              <span className="count">{n}</span>
-            </FlagButton>
+            <div key={code} className="stat-pill-wrap">
+              <FlagButton country={c} className="stat-pill">
+                <span className="flag">{c.flag}</span>
+                <span className="count">{n}</span>
+              </FlagButton>
+              {taxStatus && taxStatus.level !== "ok" && (
+                <button
+                  className={`tax-badge tax-badge-${taxStatus.level}`}
+                  onClick={(e) => { e.stopPropagation(); setTaxPopover(popoverOpen ? null : code); }}
+                  aria-label={`Tax residency info for ${c.name}`}
+                />
+              )}
+              {popoverOpen && taxStatus && (
+                <div className="tax-popover" onClick={(e) => e.stopPropagation()}>
+                  <div className="tax-popover-title">{c.flag} {c.name}</div>
+                  <div className="tax-popover-rule">Tax residency after {c.taxDays} days</div>
+                  <div className="tax-popover-days">
+                    <strong>{n}</strong> / {c.taxDays} days this year
+                    {" · "}
+                    {taxStatus.remaining > 0 ? `${taxStatus.remaining} remaining` : "threshold reached"}
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Schengen bar ----------
+function SchengenBar({ entries }) {
+  const { used, planned, total } = useMemo(() => schengenStatus(entries), [entries]);
+  if (used === 0 && planned === 0) return null;
+
+  const pct = Math.min(100, (total / 90) * 100);
+  const status = total >= 90 ? "over" : total >= 70 ? "warn" : "ok";
+
+  return (
+    <div className="schengen">
+      <div className="schengen-head">
+        <span className="schengen-label">Schengen</span>
+        <span className="schengen-counts">
+          {planned > 0 ? (
+            <>{used} <span className="schengen-planned">+ {planned} planned</span> = <strong>{total}</strong> / 90 days</>
+          ) : (
+            <><strong>{used}</strong> / 90 days</>
+          )}
+        </span>
+        <span className={`schengen-remaining schengen-${status}`}>
+          {total >= 90 ? "limit reached" : `${90 - total} left`}
+        </span>
+      </div>
+      <div className="schengen-bar">
+        <div className={`schengen-fill schengen-fill-${status}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -348,6 +448,7 @@ function App() {
   const [rangeStart, setRangeStart] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [drag, setDrag] = useState(null); // {mode: 'add'|'remove'} while painting
+  const importRef = useRef(null);
 
   // End drag on any pointer up anywhere
   useEffect(() => {
@@ -587,6 +688,45 @@ function App() {
     }
   };
 
+  const onExport = () => {
+    const data = JSON.stringify({ entries, recent }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `whereat-export-${ymd(new Date())}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (typeof parsed !== "object" || !parsed || typeof parsed.entries !== "object") {
+          alert("Invalid file — not a whereat export.");
+          return;
+        }
+        const valid = Object.entries(parsed.entries).every(
+          ([k, v]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Array.isArray(v) && v.every((c) => typeof c === "string")
+        );
+        if (!valid) { alert("Invalid file — entries data is malformed."); return; }
+        if (!confirm("Replace all current data with this import?")) return;
+        setStore({
+          entries: parsed.entries,
+          recent: Array.isArray(parsed.recent) ? parsed.recent.filter((c) => typeof c === "string") : [],
+        });
+      } catch {
+        alert("Could not read file — is it a valid whereat export?");
+      }
+      e.target.value = "";
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -594,7 +734,12 @@ function App() {
           <span className="brand-mark">◐</span>
           <span className="brand-name">whereat</span>
         </div>
-        <button className="hbtn" onClick={onClear} title="Clear all">Reset</button>
+        <div className="hbtn-group">
+          <button className="hbtn" onClick={onExport}>Export</button>
+          <button className="hbtn" onClick={() => importRef.current?.click()}>Import</button>
+          <button className="hbtn" onClick={onClear} title="Clear all">Reset</button>
+        </div>
+        <input ref={importRef} type="file" accept=".json" style={{ display: "none" }} onChange={onImportFile} />
       </header>
 
       <StatsBar
@@ -608,6 +753,8 @@ function App() {
           setViewDate(new Date(y, viewDate.getMonth(), 1));
         }}
       />
+
+      <SchengenBar entries={entries} />
 
       <CountryPicker
         activeCode={activeCode}

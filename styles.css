@@ -62,6 +62,11 @@ body {
   font-size: 17px;
   letter-spacing: -0.02em;
 }
+.hbtn-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
 .hbtn {
   background: none;
   border: 1px solid var(--line);
@@ -170,6 +175,10 @@ body {
   font-size: 13px;
   padding: 2px 0;
 }
+.stat-pill-wrap {
+  position: relative;
+  display: inline-flex;
+}
 .stat-pill {
   display: inline-flex;
   align-items: center;
@@ -186,6 +195,50 @@ body {
   font-size: 12px;
   font-weight: 600;
   color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Tax residency badge + popover ---------- */
+.tax-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  cursor: pointer;
+  padding: 0;
+  background: none;
+}
+.tax-badge-warn { background: #e09030; }
+.tax-badge-over { background: var(--accent); }
+
+.tax-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 190px;
+  z-index: 200;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: var(--shadow-md);
+}
+.tax-popover-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.tax-popover-rule {
+  color: rgba(255,255,255,0.55);
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+.tax-popover-days strong {
   font-variant-numeric: tabular-nums;
 }
 
@@ -479,6 +532,67 @@ body {
   padding: 4px 12px;
   line-height: 1.5;
 }
+
+/* ---------- Schengen bar ---------- */
+.schengen {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 10px 14px 12px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.schengen-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.schengen-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.schengen-counts {
+  font-size: 13px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.schengen-counts strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.schengen-planned {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.schengen-remaining {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.schengen-remaining.schengen-ok { color: var(--ink-3); }
+.schengen-remaining.schengen-warn { color: #b07000; }
+.schengen-remaining.schengen-over { color: var(--accent); }
+.schengen-bar {
+  height: 5px;
+  background: var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.schengen-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 300ms ease;
+}
+.schengen-fill-ok { background: #3daa6a; }
+.schengen-fill-warn { background: #e09030; }
+.schengen-fill-over { background: var(--accent); }
 
 /* ---------- Country Modal ---------- */
 .modal-backdrop {
